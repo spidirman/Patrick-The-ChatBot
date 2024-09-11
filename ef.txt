@@ -1,0 +1,106 @@
+        $(document).ready(function () {
+            // Automatically select AI Helper model and submit on page load
+            $('#model-form').submit(function (e) {
+                e.preventDefault();
+    
+                const modelChoice = $('#model-choice').val();
+    
+                $.post('/select_model', { model_choice: modelChoice }, function () {
+                    var model_value = "";
+                    if (modelChoice == 1) {
+                        model_value = "AI Helper";
+                    } else if (modelChoice == 2) {
+                        model_value = "Stable Diffusion Enhancer";
+                    } else {
+                        model_value = "wtf, how did you do that??!";
+                    }
+                    console.log('Model selected: ' + model_value);
+                });
+            });
+    
+            // Auto-trigger the model selection on page load
+            $('#model-form').submit();
+    
+            // Scroll chat to the bottom
+            function scrollToBottom() {
+                $('#chat-box').scrollTop($('#chat-box')[0].scrollHeight);
+            }
+    
+            // Escape HTML to prevent any untrusted code from executing
+            function escapeHtml(text) {
+                return $('<div>').text(text).html();
+            }
+    
+            // Function to render markdown content
+            function renderMarkdown(content) {
+                return marked.parse(content);
+            }
+    
+            // Handle user input submission
+            $('#submit-form').on('submit', function (e) {
+                e.preventDefault();
+    
+                const prompt = $('textarea[name="prompt"]').val();
+                const promptHtml = renderMarkdown(escapeHtml(prompt)); // Render markdown after escaping special characters
+    
+                // Add user's message to chat (render markdown)
+                $('#chat-box').append(`
+                    <div class="message-user">
+                        <strong>You:</strong> <div>${promptHtml}</div>
+                    </div>
+                `);
+    
+                // Clear input and disable form
+                $('textarea[name="prompt"]').val('').prop('disabled', true);
+                $('button[type="submit"]').prop('disabled', true);
+    
+                // Add AI's writing indicator
+                const writingIndicator = $('<div id="writing-indicator" class="message-ai">')
+                    .html(`<strong>Patrick:</strong> <span class="writing-indicator"></span>`)
+                    .appendTo('#chat-box');
+    
+                scrollToBottom();
+    
+                // Send the prompt to the server
+                $.ajax({
+                    type: 'POST',
+                    url: '/submit',
+                    data: { prompt: prompt },
+                    xhrFields: {
+                        onprogress: function (e) {
+                            if (e.lengthComputable) {
+                                // Update progress bar if available
+                            }
+                        }
+                    },
+                    success: function (response) {
+                        writingIndicator.remove();
+    
+                        if (response && response.length > 0) {
+                            const responseHtml = renderMarkdown(escapeHtml(response)); // Render AI's markdown response
+    
+                            // Add AI's response to chat
+                            $('#chat-box').append(`
+                                <div class="message-ai">
+                                    <strong>Patrick:</strong> <div>${responseHtml}</div>
+                                </div>
+                            `);
+    
+                            scrollToBottom();
+                        }
+    
+                        // Re-enable input fields
+                        $('textarea[name="prompt"]').prop('disabled', false);
+                        $('button[type="submit"]').prop('disabled', false);
+                    },
+                    error: function () {
+                        writingIndicator.remove();
+                        alert("An error occurred while getting the response.");
+    
+                        // Re-enable input fields after error
+                        $('textarea[name="prompt"]').prop('disabled', false);
+                        $('button[type="submit"]').prop('disabled', false);
+                    }
+                });
+            });
+        });
