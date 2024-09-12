@@ -193,13 +193,13 @@
                 const modelChoice = $('#model-choice').val();
 
                 $.post('/select_model', { model_choice: modelChoice }, function () {
-                    var model_value = "";
+                    let model_value = "";
                     if (modelChoice == 1) {
                         model_value = "AI Helper";
                     } else if (modelChoice == 2) {
                         model_value = "Stable Diffusion Enhancer";
                     } else {
-                        model_value = "wtf, how did you do that??!";
+                        model_value = "wtf, how did you do that??!"; 
                     }
                     console.log('Model selected: ' + model_value);
                 });
@@ -237,10 +237,10 @@
 
                 // Add user's message to chat (render markdown)
                 $('#chat-box').append(`
-            <div class="message-user">
-                <strong>You:</strong> <div>${promptHtml}</div>
-            </div>
-        `);
+        <div class="message-user">
+            <strong>You:</strong> <div>${promptHtml}</div>
+        </div>
+    `);
 
                 // Clear input and disable form
                 $('textarea[name="prompt"]').val('').prop('disabled', true);
@@ -253,47 +253,63 @@
 
                 scrollToBottom();
 
-                // Send the prompt to the server
-                $.ajax({
-                    type: 'POST',
-                    url: '/submit',
-                    data: { prompt: prompt },
-                    xhrFields: {
-                        onprogress: function (e) {
-                            if (e.lengthComputable) {
-                                // Update progress bar if available
-                            }
-                        }
-                    },
-                    success: function (response) {
+                // Create an EventSource to handle the live streaming of the AI response
+                const eventSource = new EventSource('/submit?prompt=' + encodeURIComponent(prompt));
+
+                let responseHtml = ''; // Initialize empty response content
+
+                eventSource.onmessage = function (event) {
+                    if (event.data === '[END]') {
+                        // End of the stream
                         writingIndicator.remove();
-
-                        if (response && response.length > 0) {
-                            const responseHtml = renderMarkdown(escapeHtml(response)); // Render AI's markdown response
-
-                            // Add AI's response to chat
-                            $('#chat-box').append(`
-                        <div class="message-ai">
-                            <strong>Patrick:</strong> <div>${responseHtml}</div>
-                        </div>
-                    `);
-
-                            scrollToBottom();
-                        }
-
+                        $('#chat-box').append(`
+                <div class="message-ai">
+                    <strong>Patrick:</strong> <div>${renderMarkdown(escapeHtml(responseHtml))}</div>
+                </div>
+            `);
+                        scrollToBottom();
                         // Re-enable input fields
                         $('textarea[name="prompt"]').prop('disabled', false);
                         $('button[type="submit"]').prop('disabled', false);
-                    },
-                    error: function () {
-                        writingIndicator.remove();
-                        alert("An error occurred while getting the response.");
-
-                        // Re-enable input fields after error
-                        $('textarea[name="prompt"]').prop('disabled', false);
-                        $('button[type="submit"]').prop('disabled', false);
+                        eventSource.close();
+                        return;
                     }
-                });
+
+                    // Replace 'nl' with a newline character
+                    if (event.data === 'nl') {
+                        responseHtml += '\n'; // Use newline character
+                    } else {
+                        // Accumulate the response content
+                        responseHtml += event.data;
+                        // Update the content of the existing message
+                        writingIndicator.html(`<strong>Patrick:</strong> <div>${renderMarkdown(escapeHtml(responseHtml))}</div>`);
+                        scrollToBottom();
+                    }
+                };
+
+                eventSource.onerror = function (event) {
+                    // Display a generic message along with detailed error information if available
+                    let errorMessage = 'An unknown error occurred';
+
+                    if (event.readyState === EventSource.CLOSED) {
+                        errorMessage = 'The connection was closed unexpectedly.';
+                    } else if (event.readyState === EventSource.CONNECTING) {
+                        errorMessage = 'The connection is currently being established.';
+                    }
+
+                    // Log the entire event object to the console for debugging
+                    console.error('EventSource Error:', event);
+
+                    // Display the error message to the user
+                    alert("An error occurred while getting the response: " + errorMessage);
+
+                    // Close the EventSource
+                    eventSource.close();
+
+                    // Re-enable input fields after error
+                    $('textarea[name="prompt"]').prop('disabled', false);
+                    $('button[type="submit"]').prop('disabled', false);
+                };
             });
 
             // Handle Enter and Shift+Enter for textarea
@@ -314,10 +330,7 @@
                 }
             });
         });
-
     </script>
-
-
 </body>
 
 </html>

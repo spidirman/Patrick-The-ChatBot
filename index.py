@@ -30,13 +30,21 @@ def select_model():
     return redirect(url_for('index'))
 
 
-@app.route('/submit', methods=['POST'])
+@app.route('/submit', methods=['GET', 'POST'])
 def submit():
-    prompt = request.form['prompt']
+    if request.method == 'POST':
+        prompt = request.form.get('prompt')
+    elif request.method == 'GET':
+        prompt = request.args.get('prompt')
+    else:
+        return jsonify({'error': 'Invalid request method.'}), 400
+
+    if not prompt:
+        return jsonify({'error': 'No prompt provided.'}), 400
+
     system = session.get('system', '')
 
     try:
-        # Correct way to use OpenAI chat completion API with streaming
         response = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
@@ -49,15 +57,21 @@ def submit():
 
         def generate_response():
             for chunk in response:
-                if chunk.choices[0].delta.content:
-                    delta_content = chunk.choices[0].delta.content
-                    if delta_content:
-                        yield f"{delta_content}"
+                if hasattr(chunk.choices[0].delta, 'content'):
+                    if chunk.choices[0].delta.content != None: 
+                        yield f"data: {chunk.choices[0].delta.content}\n\n"
+                        if chunk.choices[0].delta.content == "\n":
+                            yield f"data: nl\n\n"
+            yield "data: [END]\n\n"
 
-        return Response(generate_response(), mimetype='text/event-stream')
+        return Response(generate_response(), content_type='text/event-stream')
 
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        # Log the error for server-side debugging
+        app.logger.error(f"Error occurred: {str(e)}")
+        return jsonify({'error': f"Server error: {str(e)}"}), 500
+
+
 
 
 if __name__ == '__main__':
